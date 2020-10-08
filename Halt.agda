@@ -7,7 +7,9 @@ open import Relation.Nullary
 open import Data.Empty 
   using (⊥; ⊥-elim)
 open import Data.Product 
-  using (Σ; Σ-syntax)
+  using (Σ; Σ-syntax; _×_)
+open import Relation.Binary.PropositionalEquality
+  using (_≡_; refl; _≢_; cong; trans; sym)
 
 data Type : Set where
   𝔹  :  Type
@@ -66,7 +68,7 @@ exts : ∀ {Γ Δ}
   → (∀ {A} →       A ∈ Γ →     Expr Δ A)
     ---------------------------------
   → (∀ {A B} → A ∈ (Γ , B) → Expr (Δ , B) A)
-exts ρ z = var z
+exts ρ z     = var z
 exts ρ (s x) = rename s (ρ x)
 
 subst : ∀ {Γ Δ}
@@ -83,15 +85,16 @@ subst ρ (fix body) = fix (subst (exts ρ) body)
 
 
 
+sub : ∀ {Γ} {A B} → Expr Γ B → A ∈ (Γ , B) → Expr Γ A
+sub term z      = term
+sub _ (s pf) = var pf
+
 _[_] : ∀ {Γ A B}
         → Expr (Γ , B) A
         → Expr Γ B
         → Expr Γ A
-_[_] {Γ} {A} {B} body term = subst {Γ , B} {Γ} sub body
-  where
-  sub : ∀ {A} → A ∈ (Γ , B) → Expr Γ A
-  sub z      = term
-  sub (s pf) = var pf
+_[_] {Γ} {A} {B} body term = subst {Γ , B} {Γ} (sub term) body
+
 
 data Value : ∀ {Γ} {A} → Expr Γ A → Set where
 
@@ -143,16 +146,20 @@ data _⇓_ : ∀ {Γ A} → Expr Γ A → Expr Γ A → Set where
     → L ⇓ N
 
 
-data Dec A : Set where
-  yes : A   → Dec A
-  no  : ¬ A → Dec A
 
 
 data Halt {Γ a} (e :  Expr Γ a) : Set where
   halts : ∀ {v : Expr Γ a} → (Value v) → (e ⇓ v) → Halt e
 
 postulate
+  confluence
+    e ⇓ e1 → e ⇓ e2 → Σ [ e3 ∈ _ ] (e1 ⇓ 
+postulate
   halt     : ∀ {Γ} {a} → Expr Γ (a ⇒ 𝔹)
+  halt-sub : 
+    ∀ {Γ Δ} {a} →
+    (ρ : ∀ {A} → A ∈ Γ → Expr Δ A)
+    → subst {Γ} {Δ} ρ (halt {Γ} {a}) ≡ (halt {Δ})
   halt-ret : ∀ {Γ} {a} (e : Expr Γ a) → ((app halt e) ⇓ tt) + (app halt e ⇓ ff)
   halt-tt  : ∀ {Γ a} (e : Expr Γ a)   → ((app halt e) ⇓ tt) →    Halt e
   halt-ff  : ∀ {Γ a} (e : Expr Γ a)   → ((app halt e) ⇓ ff) → ¬ (Halt e)
@@ -174,6 +181,24 @@ bool-stepper : ∀ {Γ} {th el} (b : Expr Γ 𝔹) → b ⇓ tt → (bool b th e
 bool-stepper {_} {th} {el} .tt (.tt ∎) = bool tt th el →⟨ if-tt-↓ ⟩ (th ∎)
 bool-stepper {_} {th} {el} b (_→⟨_⟩_ .b {M} x st) 
   = _→⟨_⟩_ (bool b th el) (if-↓ x) (bool-stepper M st)
+
+
+fp-step1
+   : ∀ {Γ} {e : Expr Γ 𝔹} 
+   → (fix-problem {Γ}) ↓ e 
+   → e ≡ (bool (app halt (fix-problem)) bot tt)
+fp-step1 {Γ} fix-↓ rewrite (halt-sub {Γ , 𝔹} {Γ} {𝔹} (sub {Γ} fix-problem))  = refl
+
+fp-step2
+   : ∀ {Γ}
+   → (app (halt {Γ}) fix-problem) ⇓ tt
+   → (bool (app (halt {Γ}) fix-problem) bot tt) ⇓ bot
+fp-step2 ↓-tt = bool-stepper _  ↓-tt
+
+fix-problem-tt : ∀ {Γ} → Halt {Γ} fix-problem → ⊥
+fix-problem-tt 
+  (halts v (.(fix (bool (app halt (var z)) (fix (var z)) tt)) →⟨ x ⟩ step)) with fp-step1 x 
+... | refl = {!!}
 
 contradiction : ⊥
 contradiction with halt-ret fix-problem 
