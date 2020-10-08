@@ -7,7 +7,7 @@ open import Relation.Nullary
 open import Data.Empty 
   using (⊥; ⊥-elim)
 open import Data.Product 
-  using (Σ; Σ-syntax; _×_)
+  using (Σ; Σ-syntax; _×_) renaming (_,_ to sg)
 open import Relation.Binary.PropositionalEquality
   using (_≡_; refl; _≢_; cong; trans; sym)
 
@@ -145,15 +145,41 @@ data _⇓_ : ∀ {Γ A} → Expr Γ A → Expr Γ A → Set where
     → M ⇓ N
     → L ⇓ N
 
-
+⇓-∘ : ∀ {Γ} {a} {L M N : Expr Γ a} → L ⇓ M → M ⇓ N → L ⇓ N
+⇓-∘ (_ ∎) p2 = p2
+⇓-∘ (_ →⟨ x ⟩ p1) p2 = _ →⟨ x ⟩ ⇓-∘ p1 p2
 
 
 data Halt {Γ a} (e :  Expr Γ a) : Set where
   halts : ∀ {v : Expr Γ a} → (Value v) → (e ⇓ v) → Halt e
 
+-- to do
+--   - postulate confluence
+--   - show that if e' halts and e ⇓ e' then e halts too.
+--   - 
 postulate
-  confluence
-    e ⇓ e1 → e ⇓ e2 → Σ [ e3 ∈ _ ] (e1 ⇓ 
+  confluence : ∀ {Γ} {a} →
+    {e e1 e2 : Expr Γ a} → e ⇓ e1 → e ⇓ e2 → Σ[ e3 ∈ Expr Γ a ] ((e1 ⇓ e3) × (e2 ⇓ e3))
+
+⇓-val : ∀ {Γ a} {e e' : Expr Γ a} → Value e → e ⇓ e' → e' ≡ e
+⇓-val val   (_ ∎) = refl
+⇓-val V-↦  (_ →⟨ () ⟩ st)
+⇓-val V-tt (_ →⟨ () ⟩ st)
+⇓-val V-ff (_ →⟨ () ⟩ st)
+
+⇓-val-uniq : ∀ {Γ a} {e e' v : Expr Γ a} → Value v → e ⇓ v → e ⇓ e' → e' ⇓ v
+⇓-val-uniq pf e⇓v e⇓e' with confluence e⇓v e⇓e'
+... | sg e3 (sg v⇓e3 e'⇓e3) with ⇓-val pf v⇓e3 
+... | refl = e'⇓e3
+
+halt-ext : ∀ {Γ a} {e1 e2 : Expr Γ a} → e1 ⇓ e2 → Halt e2 → Halt e1
+halt-ext e1⇓e2 (halts v steps) = halts v (⇓-∘ e1⇓e2 steps)
+
+halt-⊥ : ∀ {Γ a} {e1 e2 : Expr Γ a} → e1 ⇓ e2 → ¬ (Halt e2) → ¬ (Halt e1)
+halt-⊥ e1⇓e2 e2-⊥ (halts v-e1 st) with ⇓-val-uniq v-e1 st e1⇓e2
+... | e2⇓v = e2-⊥ (halts v-e1 e2⇓v)
+
+
 postulate
   halt     : ∀ {Γ} {a} → Expr Γ (a ⇒ 𝔹)
   halt-sub : 
@@ -170,6 +196,8 @@ bot = fix (var z)
 bot-non-term : ∀ {Γ} →  ¬ (Halt {Γ} {𝔹} bot)
 bot-non-term (halts v (.(fix (var z)) →⟨ fix-↓ ⟩ st)) = bot-non-term (halts v st)
 
+⇓-bot-⊥ : ∀ {Γ} → (e : Expr Γ 𝔹) → e ⇓ bot → ¬ Halt e
+⇓-bot-⊥ e st = halt-⊥ st bot-non-term
 
 problem : ∀ {Γ} → Expr (Γ , 𝔹) 𝔹
 problem = (bool (app halt (var z)) bot tt)
@@ -177,11 +205,23 @@ problem = (bool (app halt (var z)) bot tt)
 fix-problem : ∀ {Γ} → Expr Γ 𝔹
 fix-problem = fix problem
 
-bool-stepper : ∀ {Γ} {th el} (b : Expr Γ 𝔹) → b ⇓ tt → (bool b th el) ⇓ th
-bool-stepper {_} {th} {el} .tt (.tt ∎) = bool tt th el →⟨ if-tt-↓ ⟩ (th ∎)
-bool-stepper {_} {th} {el} b (_→⟨_⟩_ .b {M} x st) 
-  = _→⟨_⟩_ (bool b th el) (if-↓ x) (bool-stepper M st)
+bool-stepper-tt 
+  : ∀ {Γ} {th el} (b : Expr Γ 𝔹) → b ⇓ tt → (bool {Γ} {𝔹} b th el) ⇓ th
+bool-stepper-tt {_} {th} {el} .tt (.tt ∎) = bool tt th el →⟨ if-tt-↓ ⟩ (th ∎)
+bool-stepper-tt {_} {th} {el} b (_→⟨_⟩_ .b {M} x st) 
+  = _→⟨_⟩_ (bool b th el) (if-↓ x) (bool-stepper-tt M st)
 
+bool-stepper-ff : ∀ {Γ} {th el} (b : Expr Γ 𝔹) → b ⇓ ff → (bool {Γ} {𝔹} b th el) ⇓ el
+bool-stepper-ff {_} {th} {el} .ff (.ff ∎) = bool ff th el →⟨ if-ff-↓ ⟩ (el ∎)
+bool-stepper-ff {_} {th} {el} b (_→⟨_⟩_ .b {M} x st) 
+  = _→⟨_⟩_ (bool b th el) (if-↓ x) (bool-stepper-ff M st)
+
+≡-↓ 
+  : ∀ {Γ} {e e' e'' : Expr Γ 𝔹} 
+  → e ↓ e'
+  → e' ≡ e''
+  → e ↓ e''
+≡-↓ e↓e' refl = e↓e'
 
 fp-step1
    : ∀ {Γ} {e : Expr Γ 𝔹} 
@@ -191,20 +231,43 @@ fp-step1 {Γ} fix-↓ rewrite (halt-sub {Γ , 𝔹} {Γ} {𝔹} (sub {Γ} fix-pr
 
 fp-step2
    : ∀ {Γ}
+   → (fix-problem {Γ}) ↓ (bool (app halt (fix-problem)) bot tt)
+fp-step2 {Γ} = ≡-↓ (fix-↓ {Γ} {𝔹} {problem}) (fp-step1 (fix-↓ {Γ} {𝔹} {problem}))
+
+fp-step3
+   : ∀ {Γ}
    → (app (halt {Γ}) fix-problem) ⇓ tt
    → (bool (app (halt {Γ}) fix-problem) bot tt) ⇓ bot
-fp-step2 ↓-tt = bool-stepper _  ↓-tt
+fp-step3 ⇓-tt = bool-stepper-tt _  ⇓-tt
 
-fix-problem-tt : ∀ {Γ} → Halt {Γ} fix-problem → ⊥
-fix-problem-tt 
-  (halts v (.(fix (bool (app halt (var z)) (fix (var z)) tt)) →⟨ x ⟩ step)) with fp-step1 x 
-... | refl = {!!}
+fp-step4
+   : ∀ {Γ}
+   → (app (halt {Γ}) fix-problem) ⇓ tt
+   → (fix-problem {Γ}) ⇓ bot
+fp-step4 {Γ} ⇓-tt = fix-problem →⟨ fp-step2 ⟩ fp-step3 ⇓-tt
+
+fp-step5 
+   : ∀ {Γ}
+   → (app (halt {Γ}) fix-problem) ⇓ ff
+   → (bool (app (halt {Γ}) fix-problem) bot tt) ⇓ tt
+fp-step5 ⇓-ff = bool-stepper-ff _ ⇓-ff
+
+fp-step6
+   : ∀ {Γ}
+   → (app (halt {Γ}) fix-problem) ⇓ ff
+   → fix-problem ⇓ tt
+fp-step6 ⇓-ff = fix-problem →⟨ fp-step2 ⟩ fp-step5 ⇓-ff
+
+
+fix-problem-tt : ∀ {Γ} → (app (halt {Γ}) fix-problem) ⇓ tt → Halt {Γ} fix-problem → ⊥
+fix-problem-tt ⇓-tt h = ⇓-bot-⊥ _ (fp-step4 ⇓-tt) h
+
+fix-problem-ff : ∀ {Γ} → (app (halt {Γ}) fix-problem) ⇓ ff → (¬ Halt {Γ} fix-problem) → ⊥
+fix-problem-ff ⇓-ff ¬h = ¬h (halts V-tt (fp-step6 ⇓-ff)) 
 
 contradiction : ⊥
-contradiction with halt-ret fix-problem 
-contradiction | Left ⇓tt with halt-tt fix-problem ⇓tt 
-contradiction | Left _ | halts val st = {!!}
+contradiction with halt-ret {nil} fix-problem
+contradiction | Left ⇓tt  = fix-problem-tt ⇓tt (halt-tt fix-problem ⇓tt)
+contradiction | Right ⇓ff = fix-problem-ff ⇓ff (halt-ff fix-problem ⇓ff)
 
-contradiction | Right ⇓ff with halt-ff fix-problem ⇓ff 
-... | h  = {!!}
 
