@@ -7,9 +7,14 @@ open import Relation.Nullary
 open import Data.Empty 
   using (⊥; ⊥-elim)
 open import Data.Product 
-  using (Σ; Σ-syntax; _×_) renaming (_,_ to sg)
+  using (Σ-syntax; _×_) renaming (_,_ to Sg)
 open import Relation.Binary.PropositionalEquality
-  using (_≡_; refl; _≢_; cong; trans; sym)
+  using (_≡_; refl)
+
+
+data _+_ (a : Set) (b : Set) : Set where
+  Left  : a → a + b
+  Right : b → a + b
 
 data Type : Set where
   𝔹  :  Type
@@ -20,15 +25,10 @@ data _∈_ {ty : Set} (t : ty) : List ty → Set where
   z : ∀ {ts} → t ∈ (t ∷ ts)
   s : ∀ {r} {ts} → (t ∈ ts) → t ∈ (r ∷ ts)
 
-data _+_ (a : Set) (b : Set) : Set where
-  Left  : a → a + b
-  Right : b → a + b
-
 Con = List Type
 
 nil : Con
 nil = []
-
 
 infixl 6 _,_
 _,_ : Con → Type → Con
@@ -45,17 +45,15 @@ data Expr (Γ : Con) : Type → Set where
 
 
 ext : ∀ {Γ Δ : Con}
-  → (∀ {A : Type} →       A ∈ Γ →     A ∈ Δ)
-    ---------------------------------
-  → (∀ {A B : Type} → A ∈ (Γ , B) → A ∈ (Δ , B))
+  → (∀ {ty : Type} →       ty ∈ Γ →     ty ∈ Δ)
+  → (∀ {ty tyB : Type} → ty ∈ Γ , tyB → ty ∈ Δ , tyB)
 ext ρ z = z
 ext ρ (s x) = s (ρ x)
 
 
 rename : ∀ {Γ Δ}
-  → (∀ {A} → A ∈ Γ → A ∈ Δ)
-    -----------------------
-  → (∀ {A} → Expr Γ A → Expr Δ A)
+  → (∀ {ty} → ty  ∈ Γ → ty ∈ Δ)
+  → (∀ {ty} → Expr Γ ty → Expr Δ ty)
 rename ρ (var x) = var (ρ x)
 rename ρ (app rator rand) = app (rename ρ rator) (rename ρ rand)
 rename ρ (lam body) = lam (rename (ext ρ) body)
@@ -65,16 +63,15 @@ rename ρ (bool b th el) = bool (rename ρ b) (rename ρ th) (rename ρ el)
 rename ρ (fix body) = fix (rename (ext ρ) body)
 
 exts : ∀ {Γ Δ}
-  → (∀ {A} →       A ∈ Γ →     Expr Δ A)
+  → (∀ {ty} →       ty ∈ Γ →     Expr Δ ty)
     ---------------------------------
-  → (∀ {A B} → A ∈ (Γ , B) → Expr (Δ , B) A)
+  → (∀ {ty tyB} → ty ∈ (Γ , tyB) → Expr (Δ , tyB) ty)
 exts ρ z     = var z
 exts ρ (s x) = rename s (ρ x)
 
 subst : ∀ {Γ Δ}
-  → (∀ {A} → A ∈ Γ → Expr Δ A)
-    -----------------------
-  → (∀ {A} → Expr Γ A → Expr Δ A)
+  → (∀ {ty} → ty ∈ Γ → Expr Δ ty)
+  → (∀ {ty} → Expr Γ ty → Expr Δ ty)
 subst ρ (var x) = ρ x
 subst ρ (app rator rand) = app (subst ρ rator) (subst ρ rand)
 subst ρ (lam body) = lam (subst (exts ρ) body)
@@ -84,68 +81,64 @@ subst ρ (bool b th el) = bool (subst ρ b) (subst ρ th) (subst ρ el)
 subst ρ (fix body) = fix (subst (exts ρ) body)
 
 
-
-sub : ∀ {Γ} {A B} → Expr Γ B → A ∈ (Γ , B) → Expr Γ A
+sub : ∀ {Γ} {ty tyB} → Expr Γ tyB → ty ∈ (Γ , tyB) → Expr Γ ty
 sub term z      = term
 sub _ (s pf) = var pf
 
-_[_] : ∀ {Γ A B}
-        → Expr (Γ , B) A
-        → Expr Γ B
-        → Expr Γ A
-_[_] {Γ} {A} {B} body term = subst {Γ , B} {Γ} (sub term) body
+_[_] : ∀ {Γ ty tyB}
+        → Expr (Γ , tyB) ty
+        → Expr Γ tyB
+        → Expr Γ ty
+_[_] {Γ} {ty} {tyB} body term = subst {Γ , tyB} {Γ} (sub term) body
 
 
-data Value : ∀ {Γ} {A} → Expr Γ A → Set where
-
-  V-↦ : ∀ {Γ } {A B} {body : Expr (Γ , B) A }
+data Value : ∀ {Γ} {ty} → Expr Γ ty → Set where
+  V-↦ : ∀ {Γ } {ty tyB} {body : Expr (Γ , tyB) ty }
     → Value (lam body)
-
   V-tt : ∀ {Γ} → Value {Γ} {𝔹} tt
   V-ff : ∀ {Γ} → Value {Γ} {𝔹} ff
 
-data _↓_ : ∀ {Γ} {A} → Expr Γ A -> Expr Γ A -> Set where
+data _↓_ : ∀ {Γ} {ty} → Expr Γ ty -> Expr Γ ty -> Set where
 
-  l-↓ : ∀ {Γ A B} {L L' : Expr Γ (A ⇒ B)} {M : Expr Γ A}
+  l-↓ : ∀ {Γ ty tyB} {L L' : Expr Γ (ty ⇒ tyB)} {R : Expr Γ ty}
     -> L ↓ L'
-    -> app L M ↓ app L' M
+    -> app L R ↓ app L' R
 
-  r-↓ : ∀ {Γ A B} {V : Expr Γ (A ⇒ B)} { M M' : Expr Γ A}
-    -> (Value V)
-    -> M ↓ M'
-    -> app V M ↓ app V M'
+  r-↓ : ∀ {Γ ty tyB} {VL : Expr Γ (ty ⇒ tyB)} { R R' : Expr Γ ty}
+    -> (Value VL)
+    -> R ↓ R'
+    -> app VL R ↓ app VL R'
 
 
-  β-↓ : ∀ {Γ} {A B} {N : Expr (Γ , A) B} {V : Expr Γ A}
+  β-↓ : ∀ {Γ} {ty tyB} {N : Expr (Γ , tyB) ty} {V : Expr Γ tyB}
     -> (app (lam N) V) ↓ (N [ V ])
 
-  if-↓ : ∀ {Γ} {A} {b b' : Expr Γ 𝔹} {t e : Expr Γ A}
+  if-↓ : ∀ {Γ} {ty} {b b' : Expr Γ 𝔹} {th el : Expr Γ ty}
     -> b ↓ b'
-    -> (bool b t e) ↓ (bool b' t e)
+    -> (bool b th el) ↓ (bool b' th el)
 
-  if-tt-↓ : ∀ {Γ} {A} {t e : Expr Γ A}
-    -> (bool tt t e) ↓ t
+  if-tt-↓ : ∀ {Γ} {ty} {th el : Expr Γ ty}
+    -> (bool tt th el) ↓ th
 
-  if-ff-↓ : ∀ {Γ} {A} {t e : Expr Γ A}
-    -> (bool ff t e) ↓ e
+  if-ff-↓ : ∀ {Γ} {ty} {th el : Expr Γ ty}
+    -> (bool ff th el) ↓ el
 
 
-  fix-↓ : ∀ {Γ A} {expr : Expr (Γ , A) A}
+  fix-↓ : ∀ {Γ ty} {expr : Expr (Γ , ty) ty}
     -> fix expr ↓ (expr [ fix expr ])
 
 
-data _⇓_ : ∀ {Γ A} → Expr Γ A → Expr Γ A → Set where
+data _⇓_ : ∀ {Γ ty} → Expr Γ ty → Expr Γ ty → Set where
 
-  _∎ : ∀ {Γ A} (M : Expr Γ A)
-      ------
+  _∎ : ∀ {Γ ty} (M : Expr Γ ty)
     → M ⇓ M
 
-  _→⟨_⟩_ : ∀ {Γ A} (L : Expr Γ A) {M N : Expr Γ A}
+  _→⟨_⟩_ : ∀ {Γ ty} (L : Expr Γ ty) {M N : Expr Γ ty}
     → L ↓ M
     → M ⇓ N
     → L ⇓ N
 
-⇓-∘ : ∀ {Γ} {a} {L M N : Expr Γ a} → L ⇓ M → M ⇓ N → L ⇓ N
+⇓-∘ : ∀ {Γ} {ty} {L M N : Expr Γ ty} → L ⇓ M → M ⇓ N → L ⇓ N
 ⇓-∘ (_ ∎) p2 = p2
 ⇓-∘ (_ →⟨ x ⟩ p1) p2 = _ →⟨ x ⟩ ⇓-∘ p1 p2
 
@@ -153,10 +146,7 @@ data _⇓_ : ∀ {Γ A} → Expr Γ A → Expr Γ A → Set where
 data Halt {Γ a} (e :  Expr Γ a) : Set where
   halts : ∀ {v : Expr Γ a} → (Value v) → (e ⇓ v) → Halt e
 
--- to do
---   - postulate confluence
---   - show that if e' halts and e ⇓ e' then e halts too.
---   - 
+
 postulate
   confluence : ∀ {Γ} {a} →
     {e e1 e2 : Expr Γ a} → e ⇓ e1 → e ⇓ e2 → Σ[ e3 ∈ Expr Γ a ] ((e1 ⇓ e3) × (e2 ⇓ e3))
@@ -167,15 +157,15 @@ postulate
 ⇓-val V-tt (_ →⟨ () ⟩ st)
 ⇓-val V-ff (_ →⟨ () ⟩ st)
 
-⇓-val-uniq : ∀ {Γ a} {e e' v : Expr Γ a} → Value v → e ⇓ v → e ⇓ e' → e' ⇓ v
+⇓-val-uniq : ∀ {Γ ty} {e e' v : Expr Γ ty} → Value v → e ⇓ v → e ⇓ e' → e' ⇓ v
 ⇓-val-uniq pf e⇓v e⇓e' with confluence e⇓v e⇓e'
-... | sg e3 (sg v⇓e3 e'⇓e3) with ⇓-val pf v⇓e3 
+... | Sg e3 (Sg v⇓e3 e'⇓e3) with ⇓-val pf v⇓e3 
 ... | refl = e'⇓e3
 
-halt-ext : ∀ {Γ a} {e1 e2 : Expr Γ a} → e1 ⇓ e2 → Halt e2 → Halt e1
+halt-ext : ∀ {Γ ty} {e1 e2 : Expr Γ ty} → e1 ⇓ e2 → Halt e2 → Halt e1
 halt-ext e1⇓e2 (halts v steps) = halts v (⇓-∘ e1⇓e2 steps)
 
-halt-⊥ : ∀ {Γ a} {e1 e2 : Expr Γ a} → e1 ⇓ e2 → ¬ (Halt e2) → ¬ (Halt e1)
+halt-⊥ : ∀ {Γ ty} {e1 e2 : Expr Γ ty} → e1 ⇓ e2 → ¬ (Halt e2) → ¬ (Halt e1)
 halt-⊥ e1⇓e2 e2-⊥ (halts v-e1 st) with ⇓-val-uniq v-e1 st e1⇓e2
 ... | e2⇓v = e2-⊥ (halts v-e1 e2⇓v)
 
@@ -183,20 +173,20 @@ halt-⊥ e1⇓e2 e2-⊥ (halts v-e1 st) with ⇓-val-uniq v-e1 st e1⇓e2
 postulate
   halt     : ∀ {Γ} {a} → Expr Γ (a ⇒ 𝔹)
   halt-sub : 
-    ∀ {Γ Δ} {a} →
-    (ρ : ∀ {A} → A ∈ Γ → Expr Δ A)
+    ∀ {Γ Δ} {a} 
+    →(ρ : ∀ {ty} → ty ∈ Γ → Expr Δ ty)
     → subst {Γ} {Δ} ρ (halt {Γ} {a}) ≡ (halt {Δ})
-  halt-ret : ∀ {Γ} {a} (e : Expr Γ a) → ((app halt e) ⇓ tt) + (app halt e ⇓ ff)
-  halt-tt  : ∀ {Γ a} (e : Expr Γ a)   → ((app halt e) ⇓ tt) →    Halt e
-  halt-ff  : ∀ {Γ a} (e : Expr Γ a)   → ((app halt e) ⇓ ff) → ¬ (Halt e)
+  halt-ret : ∀ {Γ} {ty} (e : Expr Γ ty) → ((app halt e) ⇓ tt) + (app halt e ⇓ ff)
+  halt-tt  : ∀ {Γ ty} (e : Expr Γ ty)   → ((app halt e) ⇓ tt) →    Halt e
+  halt-ff  : ∀ {Γ ty} (e : Expr Γ ty)   → ((app halt e) ⇓ ff) → ¬ (Halt e)
 
-bot : ∀ {a Γ} → Expr Γ a
+bot : ∀ {ty Γ} → Expr Γ ty
 bot = fix (var z)
 
-bot-non-term : ∀ {Γ} →  ¬ (Halt {Γ} {𝔹} bot)
+bot-non-term : ∀ {Γ ty} →  ¬ (Halt {Γ} {ty} bot)
 bot-non-term (halts v (.(fix (var z)) →⟨ fix-↓ ⟩ st)) = bot-non-term (halts v st)
 
-⇓-bot-⊥ : ∀ {Γ} → (e : Expr Γ 𝔹) → e ⇓ bot → ¬ Halt e
+⇓-bot-⊥ : ∀ {Γ ty} → (e : Expr Γ ty) → e ⇓ bot → ¬ Halt e
 ⇓-bot-⊥ e st = halt-⊥ st bot-non-term
 
 problem : ∀ {Γ} → Expr (Γ , 𝔹) 𝔹
