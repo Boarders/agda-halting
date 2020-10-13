@@ -10,25 +10,24 @@ open import Data.Product
   using (Σ-syntax; _×_) renaming (_,_ to Sg)
 open import Relation.Binary.PropositionalEquality
   using (_≡_; refl)
+open import Data.Sum
+  using (_⊎_; inj₁; inj₂)
 
-
-data _+_ (a : Set) (b : Set) : Set where
-  Left  : a → a + b
-  Right : b → a + b
 
 data Type : Set where
   𝔹  :  Type
   _⇒_ : Type → Type → Type
 
-infix 4 _∈_
-data _∈_ {ty : Set} (t : ty) : List ty → Set where
-  z : ∀ {ts} → t ∈ (t ∷ ts)
-  s : ∀ {r} {ts} → (t ∈ ts) → t ∈ (r ∷ ts)
 
 Con = List Type
 
 nil : Con
 nil = []
+
+infix 4 _∈_
+data _∈_  (t : Type) : Con → Set where
+  z : ∀ {ts} → t ∈ (t ∷ ts)
+  s : ∀ {r} {ts} → (t ∈ ts) → t ∈ (r ∷ ts)
 
 infixl 6 _,_
 _,_ : Con → Type → Con
@@ -37,7 +36,7 @@ _,_ con ty = ty ∷ con
 data Expr (Γ : Con) : Type → Set where
   var  : ∀ {a : Type} → a ∈ Γ → Expr Γ a
   app  : ∀ {a b} → Expr Γ (a ⇒ b) → Expr Γ a → Expr Γ b
-  lam  : ∀ {a b} → Expr (a ∷ Γ) b → Expr Γ (a ⇒ b)
+  lam  : ∀ {a b} → Expr (Γ , a) b → Expr Γ (a ⇒ b)
   tt   : Expr Γ 𝔹
   ff   : Expr Γ 𝔹
   bool : ∀ {a} → Expr Γ 𝔹 → Expr Γ a → Expr Γ a → Expr Γ a
@@ -176,7 +175,7 @@ postulate
     ∀ {Γ Δ} {a}
     →(ρ : ∀ {ty} → ty ∈ Γ → Expr Δ ty)
     → subst {Γ} {Δ} ρ (halt {Γ} {a}) ≡ (halt {Δ})
-  halt-ret : ∀ {Γ} {ty} (e : Expr Γ ty) → ((app halt e) ⇓ tt) + (app halt e ⇓ ff)
+  halt-ret : ∀ {Γ} {ty} (e : Expr Γ ty) → ((app halt e) ⇓ tt) ⊎ (app halt e ⇓ ff)
   halt-tt  : ∀ {Γ ty} (e : Expr Γ ty)   → ((app halt e) ⇓ tt) →    Halt e
   halt-ff  : ∀ {Γ ty} (e : Expr Γ ty)   → ((app halt e) ⇓ ff) → ¬ (Halt e)
 
@@ -257,5 +256,5 @@ fix-problem-ff ⇓-ff ¬h = ¬h (halts V-tt (fp-step6 ⇓-ff))
 
 contradiction : ⊥
 contradiction with halt-ret {nil} fix-problem
-contradiction | Left ⇓tt  = fix-problem-tt ⇓tt (halt-tt fix-problem ⇓tt)
-contradiction | Right ⇓ff = fix-problem-ff ⇓ff (halt-ff fix-problem ⇓ff)
+contradiction | inj₁ ⇓tt  = fix-problem-tt ⇓tt (halt-tt fix-problem ⇓tt)
+contradiction | inj₂ ⇓ff  = fix-problem-ff ⇓ff (halt-ff fix-problem ⇓ff)
