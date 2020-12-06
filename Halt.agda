@@ -106,13 +106,12 @@ _[_] {Γ} {ty} {tyB} body term = subst {Γ , tyB} {Γ} (sub term) body
 
 con₂  : Con
 con₂  = ∙ , 𝔹 ⇒ 𝔹 , 𝔹
-↦ 
+
 term₂  : Expr con₂ 𝔹
 term₂  = app (var (s z)) (var z)
 
 subst-term₂ : term₂ [ tt ] ≡ app (var z) tt
 subst-term₂ = refl
-
 
 data Value : ∀ {Γ} {ty} → Expr Γ ty → Set where
   V-↦ : ∀ {Γ } {ty tyB} {body : Expr (Γ , tyB) ty }
