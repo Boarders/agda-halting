@@ -21,8 +21,9 @@ data Type : Set where
 
 Con = List Type
 
-nil : Con
-nil = []
+
+∙ : Con
+∙ = []
 
 infix 4 _∈_
 data _∈_  (t : Type) : Con → Set where
@@ -79,6 +80,19 @@ subst ρ ff = ff
 subst ρ (bool b th el) = bool (subst ρ b) (subst ρ th) (subst ρ el)
 subst ρ (fix body) = fix (subst (exts ρ) body)
 
+con₁ : Con
+con₁ = ∙ , 𝔹 , 𝔹 , 𝔹
+
+sub₁ : ∀ {ty} → ty ∈ con₁ → Expr ∙ ty
+sub₁ z = tt
+sub₁ (s z) = ff
+sub₁ (s (s z)) = tt
+
+term₁ : Expr con₁ 𝔹
+term₁ = bool (var z) (var (s z)) (var (s (s z)))
+
+subst-term₁ : subst sub₁ term₁ ≡ bool tt ff tt
+subst-term₁ = refl
 
 sub : ∀ {Γ} {ty tyB} → Expr Γ tyB → ty ∈ (Γ , tyB) → Expr Γ ty
 sub term z      = term
@@ -89,6 +103,15 @@ _[_] : ∀ {Γ ty tyB}
         → Expr Γ tyB
         → Expr Γ ty
 _[_] {Γ} {ty} {tyB} body term = subst {Γ , tyB} {Γ} (sub term) body
+
+con₂  : Con
+con₂  = ∙ , 𝔹 ⇒ 𝔹 , 𝔹
+↦ 
+term₂  : Expr con₂ 𝔹
+term₂  = app (var (s z)) (var z)
+
+subst-term₂ : term₂ [ tt ] ≡ app (var z) tt
+subst-term₂ = refl
 
 
 data Value : ∀ {Γ} {ty} → Expr Γ ty → Set where
@@ -109,8 +132,8 @@ data _↓_ : ∀ {Γ} {ty} → Expr Γ ty -> Expr Γ ty -> Set where
     -> app VL R ↓ app VL R'
 
 
-  β-↓ : ∀ {Γ} {ty tyB} {N : Expr (Γ , tyB) ty} {V : Expr Γ tyB}
-    -> (app (lam N) V) ↓ (N [ V ])
+  β-↓ : ∀ {Γ} {ty tyB} {N : Expr (Γ , tyB) ty} {A : Expr Γ tyB}
+    -> (app (lam N) A) ↓ (N [ A ])
 
   if-↓ : ∀ {Γ} {ty} {b b' : Expr Γ 𝔹} {th el : Expr Γ ty}
     -> b ↓ b'
@@ -266,6 +289,6 @@ fix-problem-ff : ∀ {Γ} → (app (halt {Γ}) fix-problem) ⇓ ff → (¬ Halt 
 fix-problem-ff ⇓-ff ¬h = ¬h (halts V-tt (fp-step6 ⇓-ff))
 
 halting : ⊥
-halting with halt-ret {nil} fix-problem
+halting with halt-ret {∙} fix-problem
 halting | inj₁ ⇓tt  = fix-problem-tt ⇓tt (halt-tt fix-problem ⇓tt)
 halting | inj₂ ⇓ff  = fix-problem-ff ⇓ff (halt-ff fix-problem ⇓ff)
